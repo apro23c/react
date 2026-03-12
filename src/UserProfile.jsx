@@ -1,19 +1,25 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-// 자식 컴포넌트: 부모로부터 'user'라는 데이터를 Props로 전달받아 화면에 그리기만 합니다.
 const UserProfile = ({ user }) => {
   return (
-    <div style={{ border: '1px solid #ccc', padding: '16px', borderRadius: '8px', marginTop: '10px' }}>
-      <h3>{user.name}님의 프로필</h3>
-      <p><strong>이메일:</strong> {user.email}</p>
-      <p><strong>웹사이트:</strong> {user.website}</p>
-      <p><strong>회사명:</strong> {user.company.name}</p>
-
-      {/* 클릭 시 /users/1, /users/2 등 각 유저의 고유 ID 경로로 이동합니다. */}
+    // 테두리, 패딩, 둥근 모서리, 그림자 효과, 마우스 오버 시 그림자 진해지는 효과(hover:shadow-md) 등을 부여했습니다.
+    <div className="border border-gray-200 p-5 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow">
+      
+      <h3 className="text-xl font-bold text-gray-800">{user.name}</h3>
+      
+      <div className="mt-3 text-sm text-gray-600 space-y-1">
+        <p><span className="font-semibold text-gray-700">이메일:</span> {user.email}</p>
+        <p><span className="font-semibold text-gray-700">회사명:</span> {user.company.name}</p>
+      </div>
+      
       <Link to={`/users/${user.id}`}>
-        <button style={{ marginTop: '10px', padding: '6px 12px', cursor: 'pointer' }}>상세보기</button>
+        {/* 파란색 배경, 흰색 글씨, 마우스 오버 시 배경색 변경 효과를 주었습니다. */}
+        <button className="mt-4 px-4 py-2 w-full bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors cursor-pointer">
+          상세보기
+        </button>
       </Link>
+      
     </div>
   );
 };
