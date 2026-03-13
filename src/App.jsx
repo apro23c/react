@@ -1,21 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import StockCard from './StockCard';
+// 1. 방금 만든 Zustand 저장소를 불러옵니다.
+import useThemeStore from './store';
 
 const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY; 
 
 function App() {
-  // 1. 고정되어 있던 종목 배열을 State로 변경하여 동적으로 추가할 수 있게 만듭니다.
-  const [symbols, setSymbols] = useState(['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'NVDA']);
-  
+  // 1. 초기값을 그냥 배열로 넣는 대신, 로컬 스토리지에 저장된 값이 있으면 그걸 쓰고, 없으면 기본 배열을 씁니다.
+  const [symbols, setSymbols] = useState(() => {
+    const savedSymbols = localStorage.getItem('my-stocks');
+    // 로컬 스토리지에는 텍스트(문자열)로만 저장되기 때문에 JSON.parse로 다시 배열로 바꿔줍니다.
+    return savedSymbols ? JSON.parse(savedSymbols) : ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'NVDA'];
+  });
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // 2. 검색창에 입력할 새로운 티커(종목코드)를 관리할 State입니다.
   const [newSymbol, setNewSymbol] = useState('');
 
-  // 3. 데이터를 불러오는 함수를 useEffect 밖으로 분리했습니다.
+  // 2. 저장소에서 다크모드 상태와 변경 함수를 꺼내옵니다. (Props로 전달받지 않아도 됩니다!)
+  const { isDarkMode, toggleDarkMode } = useThemeStore();
+
+  // 2. symbols 배열이 변경될 때마다 그 값을 로컬 스토리지에 텍스트 형태로 저장(JSON.stringify)하는 로직을 추가합니다.
+  useEffect(() => {
+    localStorage.setItem('my-stocks', JSON.stringify(symbols));
+  }, [symbols]);
+
   const fetchStockData = async (currentSymbols) => {
+    /* 기존과 동일 (생략하지 않고 그대로 두시면 됩니다!) */
     try {
       const promises = currentSymbols.map(symbol =>
         axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${API_KEY}`)
@@ -34,64 +45,56 @@ function App() {
   };
 
   useEffect(() => {
-    // 최초 화면 진입 시 즉시 데이터를 한 번 불러옵니다.
     fetchStockData(symbols);
-
-    // 4. 실시간 자동 새로고침(Polling) 마법! setInterval을 사용해 10초마다 함수를 재실행합니다.
     const interval = setInterval(() => {
-      console.log("실시간 데이터 갱신 중...");
       fetchStockData(symbols);
-    }, 10000); // 10000ms = 10초
-
-    // 컴포넌트가 화면에서 사라질 때(Unmount) 타이머를 꺼주는 정리(Cleanup) 함수입니다. (메모리 누수 방지)
+    }, 10000);
     return () => clearInterval(interval);
-  }, [symbols]); // symbols 배열이 변경될 때마다 타이머를 새롭게 세팅합니다.
+  }, [symbols]);
 
-  // 5. 폼 제출(Enter 또는 버튼 클릭) 시 실행될 종목 추가 로직
   const handleAddSymbol = (e) => {
-    e.preventDefault(); // 폼 제출 시 화면이 새로고침되는 기본 동작을 막습니다.
+    e.preventDefault();
     const upperSymbol = newSymbol.toUpperCase().trim();
-    
-    // 빈 칸이 아니고, 기존 목록에 없는 티커일 때만 추가합니다.
     if (upperSymbol && !symbols.includes(upperSymbol)) {
-      setSymbols([...symbols, upperSymbol]); // 기존 배열에 새 티커를 밀어 넣습니다.
-      setNewSymbol(''); // 입력창 초기화
-      setLoading(true); // 새 데이터를 불러오는 동안 로딩 표시
+      setSymbols([...symbols, upperSymbol]);
+      setNewSymbol('');
+      setLoading(true);
     }
   };
 
-  if (loading && stocks.length === 0) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50 text-xl font-bold text-gray-500 animate-pulse">
-        미국 주식 시장 데이터를 불러오는 중입니다... 📈
-      </div>
-    );
-  }
+  if (loading && stocks.length === 0) return <div className="flex justify-center items-center h-screen text-xl">데이터 로딩 중...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-6 font-sans">
-      <div className="max-w-6xl mx-auto">
-        <h2 className="text-4xl font-extrabold text-slate-800 mb-2 tracking-tight">미국 주식 실시간 대시보드 🇺🇸</h2>
-        <p className="text-slate-500 mb-8 text-lg">내 관심 종목의 현재 시세와 변동률을 확인하세요. (10초마다 자동 갱신)</p>
+    // 3. isDarkMode 값에 따라 최상위 부모의 배경색과 글자색을 다르게 적용합니다.
+    <div className={`min-h-screen py-12 px-6 font-sans transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-800'}`}>
+      <div className="max-w-6xl mx-auto relative">
         
-        {/* 6. 티커 추가 검색창 (Form) */}
+        {/* 다크 모드 토글 버튼 */}
+        <button 
+          onClick={toggleDarkMode}
+          className={`absolute top-0 right-0 px-4 py-2 rounded-full font-bold shadow-md transition-colors ${isDarkMode ? 'bg-yellow-400 text-slate-900' : 'bg-slate-800 text-white'}`}
+        >
+          {isDarkMode ? '☀️ 라이트 모드' : '🌙 다크 모드'}
+        </button>
+
+        <h2 className="text-4xl font-extrabold mb-2 tracking-tight">미국 주식 실시간 대시보드 🇺🇸</h2>
+        <p className={`mb-8 text-lg ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          내 관심 종목의 현재 시세와 변동률을 확인하세요.
+        </p>
+        
         <form onSubmit={handleAddSymbol} className="flex gap-4 mb-10">
           <input 
             type="text" 
-            placeholder="티커 입력 (예: NFLX, META)" 
+            placeholder="티커 입력 (예: NFLX)" 
             value={newSymbol}
             onChange={(e) => setNewSymbol(e.target.value)}
-            className="flex-1 max-w-sm px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all uppercase placeholder-normal"
+            className={`flex-1 max-w-sm px-4 py-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all uppercase ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-gray-300'}`}
           />
-          <button 
-            type="submit"
-            className="px-6 py-3 bg-slate-800 text-white font-bold rounded-lg shadow-sm hover:bg-slate-700 transition-colors cursor-pointer"
-          >
+          <button type="submit" className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 cursor-pointer">
             종목 추가
           </button>
         </form>
         
-        {/* 주식 카드 그리드 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {stocks.map((stock) => (
             <StockCard key={stock.symbol} stock={stock} />
