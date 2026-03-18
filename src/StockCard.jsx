@@ -1,9 +1,7 @@
 import React from 'react';
-// 1. 컴포넌트 내부에서 Zustand 저장소를 직접 불러옵니다.
 import useThemeStore from './store';
 
-const StockCard = ({ stock }) => {
-  // 2. 부모(App)를 거치지 않고, 중앙 저장소에서 다크 모드 상태를 바로 꺼내옵니다.
+const StockCard = ({ stock, onRemove }) => {
   const { isDarkMode } = useThemeStore();
 
   const isPositive = stock.d > 0;
@@ -13,9 +11,20 @@ const StockCard = ({ stock }) => {
   const arrow = isPositive ? '▲' : isZero ? '-' : '▼';
 
   return (
-    // 3. isDarkMode 값에 따라 배경, 테두리, 글자색을 동적으로 변경합니다.
-    <div className={`p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+    <div className={`relative p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
       
+      <button
+        onClick={() => onRemove(stock.symbol)}
+        className="absolute top-5 right-5 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+        title="종목 삭제"
+      >
+        ✕
+      </button>
+
+      <h3 className={`text-2xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+        {stock.symbol}
+      </h3>
+
       <h3 className={`text-2xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
         {stock.symbol}
       </h3>

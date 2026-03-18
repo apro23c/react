@@ -1,42 +1,59 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import StockCard from './StockCard';
-// 1. 방금 만든 Zustand 저장소를 불러옵니다.
 import useThemeStore from './store';
 
 const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY; 
 
 function App() {
-  // 1. 초기값을 그냥 배열로 넣는 대신, 로컬 스토리지에 저장된 값이 있으면 그걸 쓰고, 없으면 기본 배열을 씁니다.
+  // ⭐️ 복구 1: 그냥 배열을 넣지 않고, 브라우저 로컬 스토리지에서 먼저 찾아보고 없으면 기본 5개를 씁니다.
   const [symbols, setSymbols] = useState(() => {
     const savedSymbols = localStorage.getItem('my-stocks');
-    // 로컬 스토리지에는 텍스트(문자열)로만 저장되기 때문에 JSON.parse로 다시 배열로 바꿔줍니다.
-    return savedSymbols ? JSON.parse(savedSymbols) : ['AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'NVDA'];
+    return savedSymbols ? JSON.parse(savedSymbols) : ['AAPL', 'MSFT', 'TSLA', 'NFLX', 'BINANCE:BTCUSDT'];
   });
+
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newSymbol, setNewSymbol] = useState('');
 
-  // 2. 저장소에서 다크모드 상태와 변경 함수를 꺼내옵니다. (Props로 전달받지 않아도 됩니다!)
   const { isDarkMode, toggleDarkMode } = useThemeStore();
 
-  // 2. symbols 배열이 변경될 때마다 그 값을 로컬 스토리지에 텍스트 형태로 저장(JSON.stringify)하는 로직을 추가합니다.
+  // ⭐️ 복구 2: 종목(symbols)이 추가되거나 삭제될 때마다 잊지 않고 로컬 스토리지에 텍스트로 꽉꽉 저장해 둡니다.
   useEffect(() => {
     localStorage.setItem('my-stocks', JSON.stringify(symbols));
   }, [symbols]);
 
+  // [최초 1회 데이터 로딩]
   const fetchStockData = async (currentSymbols) => {
-    /* 기존과 동일 (생략하지 않고 그대로 두시면 됩니다!) */
     try {
       const promises = currentSymbols.map(symbol =>
         axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${API_KEY}`)
       );
       const responses = await Promise.all(promises);
-      const stockData = responses.map((res, index) => ({
-        symbol: currentSymbols[index],
-        ...res.data
-      }));
-      setStocks(stockData);
+      
+      const validStocks = [];
+      const invalidSymbols = [];
+
+      responses.forEach((res, index) => {
+        const currentSymbol = currentSymbols[index];
+        // 암호화폐(: 포함)이거나 가격 데이터가 정상인 경우만 통과
+        if (currentSymbol.includes(':') || (res.data && res.data.c !== 0 && res.data.c !== null)) {
+          validStocks.push({
+            symbol: currentSymbol,
+            ...res.data
+          });
+        } else {
+          invalidSymbols.push(currentSymbol);
+        }
+      });
+
+      setStocks(validStocks);
+
+      // 잘못된 주식은 지워버리기
+      if (invalidSymbols.length > 0) {
+        alert(`데이터를 찾을 수 없는 종목입니다: ${invalidSymbols.join(', ')}`);
+        setSymbols((prevSymbols) => prevSymbols.filter(sym => !invalidSymbols.includes(sym)));
+      }
     } catch (error) {
       console.error("데이터 로딩 실패:", error.message);
     } finally {
@@ -44,23 +61,65 @@ function App() {
     }
   };
 
+  // [실시간 백엔드 연동 1초 갱신]
   useEffect(() => {
-    fetchStockData(symbols);
-    const interval = setInterval(() => {
-      fetchStockData(symbols);
-    }, 10000);
+    if (symbols.length === 0) return; // 종목이 하나도 없으면 실행 안 함
+
+    fetchStockData(symbols); // 부팅될 때 딱 1번만 핀허브 API 호출
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await axios.get(`http://localhost:8080/api/stocks/prices?symbols=${symbols.join(',')}`);
+        const realTimePrices = response.data;
+
+        setStocks(prevStocks => prevStocks.map(stock => {
+          const newPriceStr = realTimePrices[stock.symbol];
+          if (newPriceStr && newPriceStr !== "로딩중...") {
+            const newPrice = parseFloat(newPriceStr);
+            const newD = newPrice - stock.pc;
+            const newDp = stock.pc > 0 ? (newD / stock.pc) * 100 : 0;
+            return { ...stock, c: newPrice, d: newD, dp: newDp };
+          }
+          return stock;
+        }));
+      } catch (error) {
+        console.error("백엔드 실시간 연동 실패:", error.message);
+      }
+    }, 1000);
+
     return () => clearInterval(interval);
   }, [symbols]);
 
-  const handleAddSymbol = (e) => {
+  // [종목 추가]
+  const handleAddSymbol = async (e) => {
     e.preventDefault();
     const upperSymbol = newSymbol.toUpperCase().trim();
     if (upperSymbol && !symbols.includes(upperSymbol)) {
       setSymbols([...symbols, upperSymbol]);
       setNewSymbol('');
       setLoading(true);
+      
+      try {
+        await axios.post(`http://localhost:8080/api/stocks/subscribe/${upperSymbol}`);
+      } catch (error) {
+        console.error("구독 추가 요청 실패:", error);
+      }
     }
   };
+
+  // [종목 삭제]
+  const handleRemoveSymbol = async (symbolToRemove) => {
+    const updatedSymbols = symbols.filter(symbol => symbol !== symbolToRemove);
+    setSymbols(updatedSymbols);
+
+    try {
+      await axios.delete(`http://localhost:8080/api/stocks/subscribe/${symbolToRemove}`);
+    } catch (error) {
+      console.error("구독 해제 요청 실패:", error);
+    }
+  };
+
+  // ... (이 아래의 if (loading) 부분과 return (<div>...) 화면 그리는 부분은 기존과 완벽하게 동일합니다!) ...
 
   if (loading && stocks.length === 0) return <div className="flex justify-center items-center h-screen text-xl">데이터 로딩 중...</div>;
 
@@ -97,7 +156,11 @@ function App() {
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {stocks.map((stock) => (
-            <StockCard key={stock.symbol} stock={stock} />
+            <StockCard 
+              key={stock.symbol} 
+              stock={stock} 
+              onRemove={handleRemoveSymbol} 
+            />
           ))}
         </div>
       </div>
